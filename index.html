@@ -37,6 +37,14 @@ main{max-width:860px;margin:0 auto;padding:14px 16px}
 @media(max-width:480px){.g3{grid-template-columns:1fr}.g3 .tile{display:flex;justify-content:space-between;align-items:center}.g3 .tile .v{margin-top:0}}
 .tile{background:var(--gs);border-radius:12px;padding:10px 12px}
 .tile .l{font-size:12px;color:var(--mut)}.tile .v{font-size:17px;font-weight:700;margin-top:2px}
+.tile.wide{grid-column:1/-1}
+.grp{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px;display:flex;justify-content:space-between;gap:8px}
+.grp b{color:var(--tx);text-transform:none;letter-spacing:0;font-size:14px}
+.rh{font-size:15px;font-weight:800;color:var(--g2);text-transform:uppercase;letter-spacing:.3px;margin:18px 0 4px;border-bottom:2px solid var(--g2);padding-bottom:3px}
+.rp .rh{color:#000;border-color:#000;font-size:13px;margin:14px 0 4px}
+table.rpt td.sub{padding-left:20px}
+table.rpt tr.gh td{font-weight:700;background:var(--bg)}
+table.rpt tr.sec td{font-weight:800;background:var(--g2);color:#fff}
 .in{color:var(--in)}.out{color:var(--out)}
 .btn{border:0;border-radius:10px;padding:11px 16px;font-weight:600;cursor:pointer;background:var(--g2);color:#fff;min-height:44px}
 .btn.sec{background:var(--gs);color:var(--g2);border:1px solid var(--line)}
@@ -56,9 +64,10 @@ textarea{min-height:70px;resize:vertical}
 .it .amt{font-weight:700;white-space:nowrap;text-align:right}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;background:var(--gs);color:var(--g2);font-weight:600;margin-right:4px}
 .badge.b{background:var(--errbg);color:var(--err)}
+.badge.w{background:var(--warnbg);color:var(--warn)}
 .strike{text-decoration:line-through;opacity:.6}
 nav.bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;z-index:30;padding-bottom:env(safe-area-inset-bottom)}
-nav.bar button{flex:1;border:0;background:none;padding:10px 2px 9px;font-size:12px;font-weight:600;color:var(--mut);cursor:pointer;min-height:56px}
+nav.bar button{flex:1;min-width:0;border:0;background:none;padding:10px 0 9px;font-size:11px;font-weight:600;color:var(--mut);cursor:pointer;min-height:56px}
 nav.bar button.on{color:var(--g2);box-shadow:inset 0 3px 0 var(--g2)}
 nav.bar button svg{display:block;margin:0 auto 3px}
 .fab{position:fixed;right:16px;bottom:78px;z-index:25;background:var(--g2);color:#fff;border:0;border-radius:99px;padding:14px 20px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer;min-height:48px}
@@ -102,6 +111,10 @@ table.rpt tr.tot td{font-weight:700;background:var(--gs)}
 .rp th,.rp td{border:1px solid #000;padding:4px 6px}
 .rp th{background:#e5e5e5}.rp .n{text-align:right;white-space:nowrap}
 .rp tr.tot td{font-weight:700;background:#f0f0f0}
+.rp tr.gh td{font-weight:700;background:#f7f7f7}
+.rp tr.sec td{font-weight:800;background:#d9d9d9}
+.rp td.sub{padding-left:16px}
+.rp h3{margin:14px 0 4px;font-size:14px}
 .rp h4{margin:12px 0 2px;font-size:13px}
 .rp .sig{display:flex;justify-content:space-between;margin-top:30px;text-align:center}
 .rp .sig div{width:40%}
@@ -160,6 +173,7 @@ function terbilang(n) {
 /* ------------------------- state ------------------------- */
 const S = {
   token: null, user: null, cfg: {}, kategori: [], dana: [], trx: [], don: [],
+  inv: [], invOk: true, invMeta: { kategori: [], kondisi: [], sumber: [] }, invF: { kat: '', kond: '', q: '' },
   tab: 'home', view: 'pub', pub: null,
   filter: { jenis: '', bulan: '', dana: '', q: '' },
   lap: { mode: 'bulan', bulan: todayISO().slice(0, 7), tahun: todayISO().slice(0, 4), from: todayISO().slice(0, 8) + '01', to: todayISO() },
@@ -198,22 +212,33 @@ function ssSet(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionS
 
 /* ------------------------- kalkulasi ------------------------- */
 const aktif = () => S.trx.filter(t => t.Status !== 'Batal');
+/* Kas Umum = dana "Kas Umum". Kas Khusus (insidental) = semua dana lain: Pembangunan, Zakat, Qurban, dst. */
+const KAS_UMUM = 'Kas Umum';
+const isKhusus = d => d !== KAS_UMUM;
+function khususList(danaArr) {
+  const arr = danaArr || S.dana, pref = ['Wakaf & Pembangunan', 'Zakat', 'Qurban & Kegiatan'];
+  return pref.filter(d => arr.includes(d)).concat(arr.filter(d => d !== KAS_UMUM && !pref.includes(d)));
+}
 function calc(from, to) {
   const res = {};
   S.dana.forEach(d => res[d] = { awal: Number(S.cfg['saldo_awal:' + d] || 0), masuk: 0, keluar: 0 });
-  const kat = { Pendapatan: {}, Sumbangan: {}, Pengeluaran: {} };
+  const kat = { Pendapatan: {}, Sumbangan: {}, Pengeluaran: {} }, kd = {};
   aktif().forEach(t => {
     const r = res[t.Dana] || (res[t.Dana] = { awal: 0, masuk: 0, keluar: 0 });
     if (from && t.Tanggal < from) { r.awal += isMasuk(t) ? t.Nominal : -t.Nominal; return; }
     if (to && t.Tanggal > to) return;
     if (isMasuk(t)) r.masuk += t.Nominal; else r.keluar += t.Nominal;
     kat[t.Jenis][t.Kategori] = (kat[t.Jenis][t.Kategori] || 0) + t.Nominal;
+    const k = kd[t.Dana] || (kd[t.Dana] = { Pendapatan: {}, Sumbangan: {}, Pengeluaran: {} });
+    k[t.Jenis][t.Kategori] = (k[t.Jenis][t.Kategori] || 0) + t.Nominal;
   });
   const tot = { awal: 0, masuk: 0, keluar: 0, akhir: 0 };
   Object.keys(res).forEach(d => { const r = res[d]; r.akhir = r.awal + r.masuk - r.keluar; tot.awal += r.awal; tot.masuk += r.masuk; tot.keluar += r.keluar; tot.akhir += r.akhir; });
   const jen = { Pendapatan: 0, Sumbangan: 0, Pengeluaran: 0 };
   Object.keys(kat).forEach(j => Object.values(kat[j]).forEach(v => jen[j] += v));
-  return { res, kat, tot, jen };
+  const sum = list => { const o = { awal: 0, masuk: 0, keluar: 0, akhir: 0 }; list.forEach(d => { const r = res[d]; if (r) { o.awal += r.awal; o.masuk += r.masuk; o.keluar += r.keluar; o.akhir += r.akhir; } }); return o; };
+  const khusus = sum(Object.keys(res).filter(isKhusus));
+  return { res, kat, kd, tot, jen, khusus, umum: res[KAS_UMUM] || { awal: 0, masuk: 0, keluar: 0, akhir: 0 } };
 }
 function bulanSeries(n) {
   const out = []; const d = new Date(); let y = d.getFullYear(), m = d.getMonth() + 1;
@@ -259,6 +284,15 @@ async function loadData() {
   S.cfg = d.cfg; S.kategori = d.kategori; S.dana = d.dana; S.user = d.user;
   S.trx = d.trx.map(t => Object.assign(t, { Nominal: Number(t.Nominal) }));
   S.don = d.don;
+  S.invOk = d.invOk !== false;
+  S.invMeta = d.invMeta || S.invMeta;
+  S.inv = (d.inv || []).map(x => Object.assign(x, { Jumlah: Number(x.Jumlah) || 0, Nilai: Number(x.Nilai) || 0 }));
+}
+function saldoGroups(saldo, danaArr) {
+  const kh = khususList(danaArr), totKh = kh.reduce((a, d) => a + (saldo[d] || 0), 0);
+  return `<div class="grp"><span>Kas Umum</span><b>${rp(saldo[KAS_UMUM] || 0)}</b></div>
+  <div class="grp"><span>Kas Khusus (Insidental)</span><b>${rp(totKh)}</b></div>
+  <div class="grid g2">${kh.map(d => `<div class="tile"><div class="l">${esc(d)}</div><div class="v">${rp(saldo[d] || 0)}</div></div>`).join('') || '<div class="xs mut">Belum ada dana khusus</div>'}</div>`;
 }
 async function doLogin() {
   const u = $('#lgU').value, p = $('#lgP').value;
@@ -306,7 +340,7 @@ function renderPublik() {
   $('#app').innerHTML = `${headerHTML(p.nama, [p.alamat, p.kota].filter(Boolean).join(', ') || 'Laporan Keuangan Terbuka', '<button class="btn sm sec" onclick="S.view=\'login\';render()">Masuk Pengurus</button>')}
   <main>
     <div class="card"><h3>Total Saldo Kas Masjid</h3><div class="big">${rp(total)}</div>
-      <div class="grid g2" style="margin-top:10px">${p.dana.map(d => `<div class="tile"><div class="l">${esc(d)}</div><div class="v">${rp(p.saldo[d])}</div></div>`).join('')}</div></div>
+      ${saldoGroups(p.saldo, p.dana)}</div>
     <div class="card"><h3>6 Bulan Terakhir</h3>${chartSVG(p.bulan)}</div>
     ${blok('Sumbangan', 'in')}${blok('Pendapatan', 'in')}${blok('Pengeluaran', 'out')}
     <div class="card"><h3>Transaksi Terbaru</h3><div class="list">${p.terbaru.map(t => `<div class="it" style="cursor:default"><div><div class="l1">${esc(t.Kategori)}</div><div class="l2">${tglID(t.Tanggal)}${t.Keterangan ? ' · ' + esc(t.Keterangan) : ''}</div></div><div class="amt ${t.Jenis === 'Pengeluaran' ? 'out' : 'in'}">${t.Jenis === 'Pengeluaran' ? '−' : '+'}${rp(t.Nominal)}</div></div>`).join('') || '<div class="empty">Belum ada transaksi</div>'}</div></div>
@@ -320,11 +354,12 @@ const ICON = {
   trx: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v14M3 14l4 4 4-4M17 20V6M13 10l4-4 4 4"/></svg>',
   don: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M17 4a4 4 0 0 1 0 8M22 21c0-3-2-5-4-5.6"/></svg>',
   lap: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h8M9 17h8"/></svg>',
+  inv: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>',
   atur: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
 function renderApp() {
-  const tabs = [['home', 'Beranda'], ['trx', 'Transaksi'], ['don', 'Donatur'], ['lap', 'Laporan'], ['atur', 'Atur']];
-  const body = { home: viewHome, trx: viewTrx, don: viewDon, lap: viewLap, atur: viewAtur }[S.tab]();
+  const tabs = [['home', 'Beranda'], ['trx', 'Transaksi'], ['don', 'Donatur'], ['lap', 'Laporan'], ['inv', 'Inventaris'], ['atur', 'Atur']];
+  const body = { home: viewHome, trx: viewTrx, don: viewDon, lap: viewLap, inv: viewInv, atur: viewAtur }[S.tab]();
   $('#app').innerHTML = `${headerHTML(S.cfg.nama_masjid, S.user.nama + ' · ' + S.user.role, '<button class="btn sm sec" onclick="refresh()">Muat ulang</button>')}
   <main>${body}</main>
   ${canWrite() && (S.tab === 'home' || S.tab === 'trx') ? '<button class="fab" onclick="formTrx()">+ Catat</button>' : ''}
@@ -338,7 +373,7 @@ function viewHome() {
   const bln = calc(ym + '-01', ym + '-31');
   const recent = S.trx.slice().sort(cmpTrx).slice(0, 6);
   return `<div class="card"><h3>Total Saldo</h3><div class="big">${rp(all.tot.akhir)}</div>
-    <div class="grid g2" style="margin-top:10px">${S.dana.map(d => `<div class="tile"><div class="l">${esc(d)}</div><div class="v">${rp(all.res[d].akhir)}</div></div>`).join('')}</div></div>
+    ${saldoGroups(Object.fromEntries(S.dana.map(d => [d, all.res[d].akhir])), S.dana)}</div>
   <div class="card"><h3>Bulan ${BULAN[+ym.slice(5) - 1]} ${ym.slice(0, 4)}</h3>
     <div class="grid g3"><div class="tile"><div class="l">Pendapatan</div><div class="v in">${rp(bln.jen.Pendapatan)}</div></div>
     <div class="tile"><div class="l">Sumbangan</div><div class="v in">${rp(bln.jen.Sumbangan)}</div></div>
@@ -358,7 +393,7 @@ function trxRow(t) {
 /* ---- transaksi ---- */
 function filteredTrx() {
   const f = S.filter, q = f.q.toLowerCase();
-  return S.trx.filter(t => (!f.jenis || t.Jenis === f.jenis) && (!f.bulan || t.Tanggal.slice(0, 7) === f.bulan) && (!f.dana || t.Dana === f.dana) &&
+  return S.trx.filter(t => (!f.jenis || t.Jenis === f.jenis) && (!f.bulan || t.Tanggal.slice(0, 7) === f.bulan) && (!f.dana || (f.dana === '__khusus' ? isKhusus(t.Dana) : t.Dana === f.dana)) &&
     (!q || [t.Kategori, t.Pihak, t.Keterangan, t.NoBukti].join(' ').toLowerCase().includes(q))).sort(cmpTrx);
 }
 function viewTrx() {
@@ -367,7 +402,7 @@ function viewTrx() {
   const m = act.filter(isMasuk).reduce((a, t) => a + t.Nominal, 0), k = act.filter(t => !isMasuk(t)).reduce((a, t) => a + t.Nominal, 0);
   return `<div class="filters">
     <select onchange="S.filter.jenis=this.value;render()"><option value="">Semua jenis</option>${JENIS.map(j => `<option ${f.jenis === j ? 'selected' : ''}>${j}</option>`).join('')}</select>
-    <select onchange="S.filter.dana=this.value;render()"><option value="">Semua dana</option>${S.dana.map(d => `<option ${f.dana === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
+    <select onchange="S.filter.dana=this.value;render()"><option value="">Semua dana</option><option value="__khusus" ${f.dana === '__khusus' ? 'selected' : ''}>Semua Kas Khusus</option>${S.dana.map(d => `<option ${f.dana === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}</select>
     <input type="month" value="${f.bulan}" onchange="S.filter.bulan=this.value;render()" aria-label="Bulan">
     <input placeholder="Cari nama/keterangan/no…" value="${esc(f.q)}" onchange="S.filter.q=this.value;render()">
   </div>
@@ -404,7 +439,7 @@ function buildKat(sel) {
 function setJenis(j) { S.f.jenis = j; document.querySelectorAll('.seg button').forEach(b => b.classList.toggle('on', b.textContent === j)); buildKat(''); }
 function updDana() {
   const k = katOf(S.f.jenis).find(x => x.Kategori === $('#fKat').value);
-  $('#fDana').textContent = k ? 'Masuk/keluar dari dana: ' + k.Dana : '';
+  $('#fDana').textContent = k ? (k.Dana === KAS_UMUM ? 'Dicatat pada: Kas Umum' : 'Dicatat pada: Kas Khusus → ' + k.Dana) : '';
 }
 function fmtNom(el) { const v = el.value.replace(/\D/g, ''); el.value = v ? Number(v).toLocaleString('id-ID') : ''; }
 async function saveTrx() {
@@ -503,12 +538,31 @@ function lapRange() {
 }
 function reportHTML(print) {
   const r = lapRange(), c = calc(r.from, r.to), cf = S.cfg, cls = print ? 'rp' : '';
-  const tblKat = (j) => { const e = Object.entries(c.kat[j]).sort((a, b) => b[1] - a[1]); return `<h4>${j === 'Pengeluaran' ? 'Pengeluaran' : j}</h4><table class="rpt"><tr><th>Kategori</th><th class="n">Jumlah</th></tr>${e.map(([k, v]) => `<tr><td>${esc(k)}</td><td class="n">${rp(v)}</td></tr>`).join('') || '<tr><td colspan="2">Tidak ada</td></tr>'}<tr class="tot"><td>Total ${j}</td><td class="n">${rp(c.jen[j])}</td></tr></table>`; };
+  const T = print ? '<table>' : '<table class="rpt">';
+  const row = (lbl, v, o) => { o = o || {}; return `<tr class="${o.cls || ''}"><td class="${o.sub ? 'sub' : ''}"${v === undefined ? ' colspan="2"' : ''}>${lbl}</td>${v === undefined ? '' : `<td class="n">${rp(v)}</td>`}</tr>`; };
+  const kosong = { Pendapatan: {}, Sumbangan: {}, Pengeluaran: {} };
+  /* satu buku kas: saldo awal + penerimaan (pendapatan, sumbangan) - pengeluaran = saldo akhir */
+  const blok = (d, full) => {
+    const x = c.res[d] || { awal: 0, masuk: 0, keluar: 0, akhir: 0 }, k = c.kd[d] || kosong;
+    const grp = j => {
+      const e = Object.entries(k[j]).sort((a, b) => b[1] - a[1]);
+      if (!e.length && !full) return '';
+      const tot = e.reduce((a, [, v]) => a + v, 0);
+      return row(j, undefined, { cls: 'gh' }) + (e.map(([n, v]) => row(esc(n), v, { sub: 1 })).join('') || row('Tidak ada', 0, { sub: 1 })) + row('Jumlah ' + j, tot, { cls: 'gh' });
+    };
+    return `${T}<tr><th>Uraian</th><th class="n">Jumlah</th></tr>
+      ${row('Saldo Awal', x.awal, { cls: 'tot' })}${grp('Pendapatan')}${grp('Sumbangan')}${row('Total Penerimaan', x.masuk, { cls: 'tot' })}${grp('Pengeluaran')}${row('SALDO AKHIR', x.akhir, { cls: 'tot' })}</table>`;
+  };
+  const rr = (lbl, x, o) => { o = o || {}; return `<tr class="${o.cls || ''}"><td class="${o.sub ? 'sub' : ''}">${lbl}</td><td class="n">${rp(x.awal)}</td><td class="n">${rp(x.masuk)}</td><td class="n">${rp(x.keluar)}</td><td class="n">${rp(x.akhir)}</td></tr>`; };
+  const kh = khususList(Object.keys(c.res));
   return `<div class="${cls}"><div class="hd"><h2>LAPORAN KEUANGAN ${esc((cf.nama_masjid || '').toUpperCase())}</h2><div>${esc([cf.alamat, cf.kota].filter(Boolean).join(', '))}</div><div><b>Periode: ${esc(r.label)}</b></div></div>
-  <h4>Ringkasan per Dana</h4><table class="rpt"><tr><th>Dana</th><th class="n">Saldo Awal</th><th class="n">Penerimaan</th><th class="n">Pengeluaran</th><th class="n">Saldo Akhir</th></tr>
-  ${Object.keys(c.res).map(d => { const x = c.res[d]; return `<tr><td>${esc(d)}</td><td class="n">${rp(x.awal)}</td><td class="n">${rp(x.masuk)}</td><td class="n">${rp(x.keluar)}</td><td class="n">${rp(x.akhir)}</td></tr>`; }).join('')}
-  <tr class="tot"><td>TOTAL</td><td class="n">${rp(c.tot.awal)}</td><td class="n">${rp(c.tot.masuk)}</td><td class="n">${rp(c.tot.keluar)}</td><td class="n">${rp(c.tot.akhir)}</td></tr></table>
-  ${tblKat('Sumbangan')}${tblKat('Pendapatan')}${tblKat('Pengeluaran')}
+  <div class="rh">A. Kas Umum</div>${blok(KAS_UMUM, true)}
+  <div class="rh">B. Kas Khusus (Insidental)</div>
+  ${kh.map((d, i) => `<h4>${i + 1}. ${esc(d)}</h4>${blok(d, false)}`).join('') || '<p>Belum ada dana khusus.</p>'}
+  <div class="rh">C. Rekapitulasi Seluruh Kas</div>
+  ${T}<tr><th>Kas</th><th class="n">Saldo Awal</th><th class="n">Penerimaan</th><th class="n">Pengeluaran</th><th class="n">Saldo Akhir</th></tr>
+  ${rr('Kas Umum', c.umum)}${rr('Kas Khusus', c.khusus, { cls: 'gh' })}${kh.map(d => rr(esc(d), c.res[d], { sub: 1 })).join('')}
+  ${rr('TOTAL SELURUH KAS', c.tot, { cls: 'tot' })}</table>
   ${print ? `<div class="sig"><div>Mengetahui,<br>Ketua DKM<br><br><br><br><b><u>${esc(cf.ketua_dkm || '..............')}</u></b></div><div>${esc(cf.kota || '')}${cf.kota ? ', ' : ''}${tglID(todayISO())}<br>Bendahara<br><br><br><br><b><u>${esc(cf.bendahara || '..............')}</u></b></div></div>` : ''}</div>`;
 }
 function viewLap() {
@@ -528,6 +582,93 @@ function exportCSV() {
     rows.map(t => [t.NoBukti, t.Tanggal, t.Jenis, t.Kategori, t.Dana, t.Pihak, t.Metode, t.Nominal, t.Keterangan].map(q).join(',')).join('\n');
   const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = 'transaksi-masjid-' + r.from + '_' + r.to + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+/* ---- inventaris ---- */
+const invAktif = () => S.inv.filter(x => x.Status !== 'Dihapus');
+function invFiltered() {
+  const f = S.invF, q = f.q.toLowerCase();
+  return invAktif().filter(x => (!f.kat || x.Kategori === f.kat) && (!f.kond || x.Kondisi === f.kond) &&
+    (!q || [x.Nama, x.Kode, x.Lokasi, x.Keterangan].join(' ').toLowerCase().includes(q)))
+    .sort((a, b) => a.Kategori.localeCompare(b.Kategori) || a.Nama.localeCompare(b.Nama));
+}
+const kondBadge = k => `<span class="badge ${k === 'Baik' ? '' : k === 'Rusak Ringan' ? 'w' : 'b'}">${esc(k)}</span>`;
+function viewInv() {
+  if (!S.invOk) return `<div class="card"><div class="alert">Modul inventaris belum aktif di backend. Buka Apps Script, jalankan fungsi <b>setupAwal</b> sekali lagi, lalu tekan <b>Muat ulang</b>.</div></div>`;
+  const all = invAktif(), list = invFiltered(), f = S.invF;
+  const nilai = all.reduce((a, x) => a + x.Nilai, 0), baik = all.filter(x => x.Kondisi === 'Baik').length;
+  let last = '';
+  const rows = list.map(x => {
+    const h = x.Kategori !== last ? (last = x.Kategori, `<div class="grp"><span>${esc(x.Kategori)}</span></div>`) : '';
+    return h + `<div class="it" onclick="showInv('${x.ID}')"><div><div class="l1">${esc(x.Nama)}</div><div class="l2">${esc(x.Kode)}${x.Lokasi ? ' · ' + esc(x.Lokasi) : ''}</div></div>
+      <div class="amt">${x.Jumlah.toLocaleString('id-ID')} ${esc(x.Satuan)}<div>${kondBadge(x.Kondisi)}</div></div></div>`;
+  }).join('');
+  return `<div class="card"><div class="grid g2">
+      <div class="tile"><div class="l">Jenis barang</div><div class="v">${all.length}</div></div>
+      <div class="tile"><div class="l">Total nilai perolehan</div><div class="v">${rp(nilai)}</div></div>
+      <div class="tile"><div class="l">Kondisi baik</div><div class="v in">${baik}</div></div>
+      <div class="tile"><div class="l">Perlu perbaikan</div><div class="v ${all.length - baik ? 'out' : ''}">${all.length - baik}</div></div></div></div>
+  ${canWrite() ? '<button class="btn block" style="margin-bottom:10px" onclick="formInv()">+ Tambah Barang</button>' : ''}
+  <div class="filters">
+    <select onchange="S.invF.kat=this.value;render()"><option value="">Semua kategori</option>${S.invMeta.kategori.map(k => `<option ${f.kat === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>
+    <select onchange="S.invF.kond=this.value;render()"><option value="">Semua kondisi</option>${S.invMeta.kondisi.map(k => `<option ${f.kond === k ? 'selected' : ''}>${esc(k)}</option>`).join('')}</select>
+    <input class="full" placeholder="Cari nama, kode, atau lokasi…" value="${esc(f.q)}" onchange="S.invF.q=this.value;render()"></div>
+  <div class="card"><div class="list">${rows || '<div class="empty">Belum ada barang. Tekan “+ Tambah Barang”.</div>'}</div></div>
+  <div class="grid g2"><button class="btn sec" onclick="cetakInv()">Cetak Daftar</button><button class="btn sec" onclick="exportInv()">Unduh CSV (Excel)</button></div>
+  <p class="xs mut center" style="margin-top:8px">Cetak dan CSV mengikuti filter yang sedang dipilih (${list.length} barang).</p>`;
+}
+function showInv(id) {
+  const x = S.inv.find(v => v.ID === id); if (!x) return;
+  const row = (a, b) => `<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)"><span class="mut">${a}</span><span style="text-align:right">${b}</span></div>`;
+  openModal(`<h3>${esc(x.Nama)}</h3><div class="xs mut">${esc(x.Kode)}</div>
+    ${row('Kategori', esc(x.Kategori))}${row('Jumlah', x.Jumlah.toLocaleString('id-ID') + ' ' + esc(x.Satuan))}${row('Kondisi', kondBadge(x.Kondisi))}${row('Lokasi', esc(x.Lokasi || '-'))}
+    ${row('Tanggal perolehan', x.TglPerolehan ? tglID(x.TglPerolehan) : '-')}${row('Sumber', esc(x.Sumber))}${row('Nilai perolehan', x.Nilai ? rp(x.Nilai) : '-')}
+    ${row('Bukti pengeluaran', esc(x.NoBukti || '-'))}${row('Keterangan', esc(x.Keterangan || '-'))}${row('Dicatat oleh', esc(x.DicatatOleh || '-'))}
+    ${canWrite() ? `<div class="grid g2" style="margin-top:14px"><button class="btn sec" onclick="formInv('${x.ID}')">Ubah</button><button class="btn red" onclick="hapusInv('${x.ID}')">Hapus dari daftar</button></div>` : ''}
+    <button class="btn sec block" style="margin-top:8px" onclick="closeModal()">Tutup</button>`);
+}
+function formInv(id) {
+  const x = id ? S.inv.find(v => v.ID === id) : { Nama: '', Kategori: S.invMeta.kategori[0], Jumlah: 1, Satuan: 'unit', Kondisi: 'Baik', Lokasi: '', TglPerolehan: '', Sumber: 'Pembelian', Nilai: 0, NoBukti: '', Keterangan: '' };
+  const sel = (arr, v) => arr.map(o => `<option ${o === v ? 'selected' : ''}>${esc(o)}</option>`).join('');
+  const lok = [...new Set(S.inv.map(v => v.Lokasi).filter(Boolean))];
+  openModal(`<h3>${id ? 'Ubah Barang' : 'Tambah Barang'}</h3>${id ? `<div class="xs mut">${esc(x.Kode)}</div>` : ''}
+    <label>Nama barang</label><input id="iN" value="${esc(x.Nama)}" placeholder="mis. Karpet sajadah, Speaker masjid">
+    <label>Kategori</label><select id="iK">${sel(S.invMeta.kategori, x.Kategori)}</select>
+    <div class="grid g2"><div><label>Jumlah</label><input id="iJ" inputmode="numeric" value="${x.Jumlah}"></div><div><label>Satuan</label><input id="iS" value="${esc(x.Satuan)}" placeholder="unit, buah, set"></div></div>
+    <label>Kondisi</label><select id="iC">${sel(S.invMeta.kondisi, x.Kondisi)}</select>
+    <label>Lokasi</label><input id="iL" list="dlLok" value="${esc(x.Lokasi)}" placeholder="mis. Ruang utama, Gudang, Serambi"><datalist id="dlLok">${lok.map(l => `<option value="${esc(l)}">`).join('')}</datalist>
+    <label>Tanggal perolehan (opsional)</label><input type="date" id="iT" value="${esc(x.TglPerolehan)}">
+    <label>Sumber</label><select id="iR">${sel(S.invMeta.sumber, x.Sumber)}</select>
+    <label>Nilai perolehan total, Rp (opsional)</label><input id="iV" inputmode="numeric" value="${x.Nilai ? Number(x.Nilai).toLocaleString('id-ID') : ''}" oninput="fmtNom(this)">
+    <label>No. bukti pengeluaran (opsional)</label><input id="iB" value="${esc(x.NoBukti)}" placeholder="mis. BKK/2026/0007">
+    <label>Keterangan</label><textarea id="iX">${esc(x.Keterangan)}</textarea>
+    <div class="grid g2" style="margin-top:14px"><button class="btn sec" onclick="closeModal()">Batal</button><button class="btn" onclick="saveInv('${id || ''}')">Simpan</button></div>`);
+}
+async function saveInv(id) {
+  const inv = { ID: id, Nama: $('#iN').value, Kategori: $('#iK').value, Jumlah: Number($('#iJ').value.replace(/\D/g, '')), Satuan: $('#iS').value, Kondisi: $('#iC').value, Lokasi: $('#iL').value,
+    TglPerolehan: $('#iT').value, Sumber: $('#iR').value, Nilai: Number($('#iV').value.replace(/\D/g, '')), NoBukti: $('#iB').value, Keterangan: $('#iX').value };
+  await run(async () => { await api('inv_save', { inv }); await loadData(); closeModal(); render(); toast('Barang tersimpan'); });
+}
+async function hapusInv(id) {
+  const alasan = prompt('Alasan menghapus dari daftar (wajib), mis. rusak total, dijual, hilang, dihibahkan. Data tetap tersimpan di Google Sheet:');
+  if (!alasan || !alasan.trim()) return;
+  await run(async () => { await api('inv_hapus', { id, alasan }); await loadData(); closeModal(); render(); toast('Barang dihapus dari daftar'); });
+}
+function cetakInv() {
+  const list = invFiltered(), cf = S.cfg, nilai = list.reduce((a, x) => a + x.Nilai, 0), f = S.invF;
+  const ket = [f.kat, f.kond, f.q ? 'cari: ' + f.q : ''].filter(Boolean).join(' · ');
+  printHTML(`<div class="rp"><div class="hd"><h2>DAFTAR INVENTARIS ${esc((cf.nama_masjid || '').toUpperCase())}</h2><div>${esc([cf.alamat, cf.kota].filter(Boolean).join(', '))}</div><div><b>Per ${tglID(todayISO())}${ket ? ' (' + esc(ket) + ')' : ''}</b></div></div>
+  <table><tr><th>No</th><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th class="n">Jumlah</th><th>Kondisi</th><th>Lokasi</th><th class="n">Nilai (Rp)</th></tr>
+  ${list.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.Kode)}</td><td>${esc(x.Nama)}</td><td>${esc(x.Kategori)}</td><td class="n">${x.Jumlah.toLocaleString('id-ID')} ${esc(x.Satuan)}</td><td>${esc(x.Kondisi)}</td><td>${esc(x.Lokasi)}</td><td class="n">${x.Nilai ? x.Nilai.toLocaleString('id-ID') : '-'}</td></tr>`).join('') || '<tr><td colspan="8">Belum ada barang</td></tr>'}
+  <tr class="tot"><td colspan="7">TOTAL NILAI PEROLEHAN (${list.length} jenis barang)</td><td class="n">${nilai.toLocaleString('id-ID')}</td></tr></table>
+  <div class="sig"><div>Mengetahui,<br>Ketua DKM<br><br><br><br><b><u>${esc(cf.ketua_dkm || '..............')}</u></b></div><div>${esc(cf.kota || '')}${cf.kota ? ', ' : ''}${tglID(todayISO())}<br>Bendahara<br><br><br><br><b><u>${esc(cf.bendahara || '..............')}</u></b></div></div></div>`);
+}
+function exportInv() {
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const csv = '﻿' + ['Kode', 'Nama', 'Kategori', 'Jumlah', 'Satuan', 'Kondisi', 'Lokasi', 'Tgl Perolehan', 'Sumber', 'Nilai', 'No Bukti', 'Keterangan'].join(',') + '\n' +
+    invFiltered().map(x => [x.Kode, x.Nama, x.Kategori, x.Jumlah, x.Satuan, x.Kondisi, x.Lokasi, x.TglPerolehan, x.Sumber, x.Nilai, x.NoBukti, x.Keterangan].map(q).join(',')).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'inventaris-masjid-' + todayISO() + '.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
 
 /* ---- pengaturan ---- */
