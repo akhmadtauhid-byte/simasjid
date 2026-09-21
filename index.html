@@ -40,6 +40,8 @@ main{max-width:860px;margin:0 auto;padding:14px 16px}
 .tile.wide{grid-column:1/-1}
 .grp{font-size:12px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px;display:flex;justify-content:space-between;gap:8px}
 .grp b{color:var(--tx);text-transform:none;letter-spacing:0;font-size:14px}
+.kl{display:flex;justify-content:space-between;gap:10px;padding:6px 0 6px 12px;border-bottom:1px solid var(--line);font-size:14px}
+.sh{display:flex;justify-content:space-between;gap:10px;font-weight:700;margin-top:12px;padding-bottom:3px}
 .rh{font-size:15px;font-weight:800;color:var(--g2);text-transform:uppercase;letter-spacing:.3px;margin:18px 0 4px;border-bottom:2px solid var(--g2);padding-bottom:3px}
 .rp .rh{color:#000;border-color:#000;font-size:13px;margin:14px 0 4px}
 table.rpt td.sub{padding-left:20px}
@@ -138,7 +140,7 @@ table.rpt tr.tot td{font-weight:700;background:var(--gs)}
    SIMASJID - frontend. Ganti API_URL dengan URL Web App Apps Script Anda
    (berakhiran /exec). Contoh: https://script.google.com/macros/s/AKfy.../exec
    ===================================================================== */
-const API_URL = 'https://script.google.com/macros/s/AKfycbxuzTXhbmbbLQW4A5zZMRKfmb8eBF4UD_KvIc3g2yzPVmR5lKzGBLAGw6-8bEQ2JNjb/exec';
+const API_URL = 'API_URL';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -173,6 +175,7 @@ function terbilang(n) {
 /* ------------------------- state ------------------------- */
 const S = {
   token: null, user: null, cfg: {}, kategori: [], dana: [], trx: [], don: [],
+  kas: { mode: 'bulan', bulan: todayISO().slice(0, 7), tahun: todayISO().slice(0, 4) },
   inv: [], invOk: true, invMeta: { kategori: [], kondisi: [], sumber: [] }, invF: { kat: '', kond: '', q: '' },
   tab: 'home', view: 'pub', pub: null,
   filter: { jenis: '', bulan: '', dana: '', q: '' },
@@ -259,11 +262,11 @@ function chartSVG(series) {
   series.forEach((s, i) => {
     const x0 = pl + i * bw, w = bw * .32, hm = ih * s.masuk / top, hk = ih * s.keluar / top;
     const m = +s.key.slice(5) - 1;
-    g += `<rect x="${x0 + bw * .12}" y="${pt + ih - hm}" width="${w}" height="${Math.max(hm, 0)}" rx="2" fill="var(--in)"><title>${BULAN[m]}: penerimaan ${rp(s.masuk)}</title></rect>`;
+    g += `<rect x="${x0 + bw * .12}" y="${pt + ih - hm}" width="${w}" height="${Math.max(hm, 0)}" rx="2" fill="var(--in)"><title>${BULAN[m]}: pemasukan ${rp(s.masuk)}</title></rect>`;
     g += `<rect x="${x0 + bw * .12 + w + 2}" y="${pt + ih - hk}" width="${w}" height="${Math.max(hk, 0)}" rx="2" fill="var(--out)"><title>${BULAN[m]}: pengeluaran ${rp(s.keluar)}</title></rect>`;
     g += `<text x="${x0 + bw / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--mut)">${BLN3[m]}</text>`;
   });
-  return `<div class="chartwrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik penerimaan dan pengeluaran per bulan">${g}</svg><div class="legend"><span><i style="background:var(--in)"></i>Penerimaan</span><span><i style="background:var(--out)"></i>Pengeluaran</span></div></div>`;
+  return `<div class="chartwrap"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik pemasukan dan pengeluaran per bulan">${g}</svg><div class="legend"><span><i style="background:var(--in)"></i>Pemasukan</span><span><i style="background:var(--out)"></i>Pengeluaran</span></div></div>`;
 }
 
 /* ------------------------- init & auth ------------------------- */
@@ -288,9 +291,9 @@ async function loadData() {
   S.invMeta = d.invMeta || S.invMeta;
   S.inv = (d.inv || []).map(x => Object.assign(x, { Jumlah: Number(x.Jumlah) || 0, Nilai: Number(x.Nilai) || 0 }));
 }
-function saldoGroups(saldo, danaArr) {
+function saldoGroups(saldo, danaArr, linkKas) {
   const kh = khususList(danaArr), totKh = kh.reduce((a, d) => a + (saldo[d] || 0), 0);
-  return `<div class="grp"><span>Kas Umum</span><b>${rp(saldo[KAS_UMUM] || 0)}</b></div>
+  return `<div class="grp" ${linkKas ? `style="cursor:pointer" onclick="S.tab='kas';render();window.scrollTo(0,0)"` : ''}><span>Kas Umum${linkKas ? ' — lihat rincian ›' : ''}</span><b>${rp(saldo[KAS_UMUM] || 0)}</b></div>
   <div class="grp"><span>Kas Khusus (Insidental)</span><b>${rp(totKh)}</b></div>
   <div class="grid g2">${kh.map(d => `<div class="tile"><div class="l">${esc(d)}</div><div class="v">${rp(saldo[d] || 0)}</div></div>`).join('') || '<div class="xs mut">Belum ada dana khusus</div>'}</div>`;
 }
@@ -359,11 +362,11 @@ const ICON = {
 };
 function renderApp() {
   const tabs = [['home', 'Beranda'], ['trx', 'Transaksi'], ['don', 'Donatur'], ['lap', 'Laporan'], ['inv', 'Inventaris'], ['atur', 'Atur']];
-  const body = { home: viewHome, trx: viewTrx, don: viewDon, lap: viewLap, inv: viewInv, atur: viewAtur }[S.tab]();
+  const body = { home: viewHome, kas: viewKas, trx: viewTrx, don: viewDon, lap: viewLap, inv: viewInv, atur: viewAtur }[S.tab]();
   $('#app').innerHTML = `${headerHTML(S.cfg.nama_masjid, S.user.nama + ' · ' + S.user.role, '<button class="btn sm sec" onclick="refresh()">Muat ulang</button>')}
   <main>${body}</main>
-  ${canWrite() && (S.tab === 'home' || S.tab === 'trx') ? '<button class="fab" onclick="formTrx()">+ Catat</button>' : ''}
-  <nav class="bar">${tabs.map(([k, l]) => `<button class="${S.tab === k ? 'on' : ''}" onclick="S.tab='${k}';render();window.scrollTo(0,0)">${ICON[k]}${l}</button>`).join('')}</nav>`;
+  ${canWrite() && (S.tab === 'home' || S.tab === 'trx' || S.tab === 'kas') ? '<button class="fab" onclick="formTrx()">+ Catat</button>' : ''}
+  <nav class="bar">${tabs.map(([k, l]) => `<button class="${S.tab === k || (k === 'home' && S.tab === 'kas') ? 'on' : ''}" onclick="S.tab='${k}';render();window.scrollTo(0,0)">${ICON[k]}${l}</button>`).join('')}</nav>`;
 }
 
 /* ---- beranda ---- */
@@ -373,7 +376,7 @@ function viewHome() {
   const bln = calc(ym + '-01', ym + '-31');
   const recent = S.trx.slice().sort(cmpTrx).slice(0, 6);
   return `<div class="card"><h3>Total Saldo</h3><div class="big">${rp(all.tot.akhir)}</div>
-    ${saldoGroups(Object.fromEntries(S.dana.map(d => [d, all.res[d].akhir])), S.dana)}</div>
+    ${saldoGroups(Object.fromEntries(S.dana.map(d => [d, all.res[d].akhir])), S.dana, true)}</div>
   <div class="card"><h3>Bulan ${BULAN[+ym.slice(5) - 1]} ${ym.slice(0, 4)}</h3>
     <div class="grid g3"><div class="tile"><div class="l">Pendapatan</div><div class="v in">${rp(bln.jen.Pendapatan)}</div></div>
     <div class="tile"><div class="l">Sumbangan</div><div class="v in">${rp(bln.jen.Sumbangan)}</div></div>
@@ -388,6 +391,42 @@ function trxRow(t) {
   return `<div class="it" onclick="showDetail('${t.ID}')"><div><div class="l1 ${batal ? 'strike' : ''}">${esc(t.Kategori)}${batal ? ' <span class="badge b">Batal</span>' : ''}</div>
     <div class="l2">${tglID(t.Tanggal)} · <span class="badge">${esc(t.Jenis)}</span>${esc(t.Pihak || '')}</div></div>
     <div class="amt ${isMasuk(t) ? 'in' : 'out'} ${batal ? 'strike' : ''}">${isMasuk(t) ? '+' : '−'}${rp(t.Nominal)}</div></div>`;
+}
+
+/* ---- kas umum: pemasukan (pendapatan + sumbangan) dan pengeluaran ---- */
+function kasRange() {
+  const k = S.kas;
+  if (k.mode === 'bulan') { const [y, m] = k.bulan.split('-'); return { from: k.bulan + '-01', to: k.bulan + '-31', label: `${BULAN[+m - 1]} ${y}` }; }
+  if (k.mode === 'tahun') return { from: k.tahun + '-01-01', to: k.tahun + '-12-31', label: `Tahun ${k.tahun}` };
+  return { from: null, to: null, label: 'Semua periode' };
+}
+function viewKas() {
+  const kk = S.kas, r = kasRange(), c = calc(r.from, r.to), x = c.umum;
+  const k = c.kd[KAS_UMUM] || { Pendapatan: {}, Sumbangan: {}, Pengeluaran: {} };
+  const inR = t => t.Dana === KAS_UMUM && (!r.from || t.Tanggal >= r.from) && (!r.to || t.Tanggal <= r.to);
+  const tx = aktif().filter(inR).sort(cmpTrx), masuk = tx.filter(isMasuk), keluar = tx.filter(t => !isMasuk(t));
+  const jml = j => Object.values(k[j]).reduce((a, v) => a + v, 0);
+  const lines = (j, cls) => Object.entries(k[j]).sort((a, b) => b[1] - a[1]).map(([n, v]) => `<div class="kl"><span>${esc(n)}</span><b class="${cls}">${rp(v)}</b></div>`).join('') || '<div class="kl mut"><span>Tidak ada</span><span></span></div>';
+  const daftar = (arr, judul) => `<div class="sh" style="margin-top:18px"><span class="mut sm">${judul} (${arr.length})</span></div><div class="list">${arr.slice(0, 100).map(trxRow).join('') || '<div class="empty">Belum ada transaksi pada periode ini.</div>'}</div>${arr.length > 100 ? '<p class="xs mut center">Menampilkan 100 terbaru. Persempit periode untuk melihat yang lain.</p>' : ''}`;
+  const yrs = [...new Set(S.trx.map(t => t.Tanggal.slice(0, 4)).concat(todayISO().slice(0, 4)))].sort().reverse();
+  return `<button class="btn sec sm" style="margin-bottom:10px" onclick="S.tab='home';render()">‹ Beranda</button>
+  <div class="card"><h3>Kas Umum · ${esc(r.label)}</h3>
+    <div class="seg">${[['bulan', 'Bulanan'], ['tahun', 'Tahunan'], ['semua', 'Semua']].map(([m, n]) => `<button class="${kk.mode === m ? 'on' : ''}" onclick="S.kas.mode='${m}';render()">${n}</button>`).join('')}</div>
+    ${kk.mode === 'bulan' ? `<label>Bulan</label><input type="month" value="${kk.bulan}" onchange="S.kas.bulan=this.value||S.kas.bulan;render()">` : ''}
+    ${kk.mode === 'tahun' ? `<label>Tahun</label><select onchange="S.kas.tahun=this.value;render()">${yrs.map(y => `<option ${y === kk.tahun ? 'selected' : ''}>${y}</option>`).join('')}</select>` : ''}
+    <div class="grid g2" style="margin-top:12px">
+      <div class="tile"><div class="l">Saldo awal</div><div class="v">${rp(x.awal)}</div></div>
+      <div class="tile"><div class="l">Saldo akhir</div><div class="v">${rp(x.akhir)}</div></div>
+      <div class="tile"><div class="l">Total pemasukan</div><div class="v in">${rp(x.masuk)}</div></div>
+      <div class="tile"><div class="l">Total pengeluaran</div><div class="v out">${rp(x.keluar)}</div></div></div></div>
+  <div class="card"><div class="sh" style="margin-top:0"><span>I. PEMASUKAN</span><span class="in">${rp(x.masuk)}</span></div>
+    <div class="sh"><span class="mut sm">Pendapatan</span><b>${rp(jml('Pendapatan'))}</b></div>${lines('Pendapatan', 'in')}
+    <div class="sh"><span class="mut sm">Sumbangan</span><b>${rp(jml('Sumbangan'))}</b></div>${lines('Sumbangan', 'in')}
+    ${daftar(masuk, 'Daftar transaksi pemasukan')}</div>
+  <div class="card"><div class="sh" style="margin-top:0"><span>II. PENGELUARAN</span><span class="out">${rp(x.keluar)}</span></div>
+    ${lines('Pengeluaran', 'out')}
+    ${daftar(keluar, 'Daftar transaksi pengeluaran')}</div>
+  <button class="btn block" onclick="printHTML(reportHTML(true, kasRange(), 'umum'))">Cetak Laporan Kas Umum</button>`;
 }
 
 /* ---- transaksi ---- */
@@ -536,33 +575,41 @@ function lapRange() {
   if (l.mode === 'tahun') return { from: l.tahun + '-01-01', to: l.tahun + '-12-31', label: `Tahun ${l.tahun}` };
   return { from: l.from, to: l.to, label: `${tglID(l.from)} s.d. ${tglID(l.to)}` };
 }
-function reportHTML(print) {
-  const r = lapRange(), c = calc(r.from, r.to), cf = S.cfg, cls = print ? 'rp' : '';
+function reportHTML(print, rng, only) {
+  const r = rng || lapRange(), c = calc(r.from, r.to), cf = S.cfg, cls = print ? 'rp' : '';
   const T = print ? '<table>' : '<table class="rpt">';
   const row = (lbl, v, o) => { o = o || {}; return `<tr class="${o.cls || ''}"><td class="${o.sub ? 'sub' : ''}"${v === undefined ? ' colspan="2"' : ''}>${lbl}</td>${v === undefined ? '' : `<td class="n">${rp(v)}</td>`}</tr>`; };
   const kosong = { Pendapatan: {}, Sumbangan: {}, Pengeluaran: {} };
-  /* satu buku kas: saldo awal + penerimaan (pendapatan, sumbangan) - pengeluaran = saldo akhir */
+  /* satu buku kas: Saldo Awal + I. PEMASUKAN (Pendapatan + Sumbangan) - II. PENGELUARAN = Saldo Akhir */
   const blok = (d, full) => {
     const x = c.res[d] || { awal: 0, masuk: 0, keluar: 0, akhir: 0 }, k = c.kd[d] || kosong;
+    const urut = j => Object.entries(k[j]).sort((a, b) => b[1] - a[1]);
     const grp = j => {
-      const e = Object.entries(k[j]).sort((a, b) => b[1] - a[1]);
+      const e = urut(j);
       if (!e.length && !full) return '';
       const tot = e.reduce((a, [, v]) => a + v, 0);
       return row(j, undefined, { cls: 'gh' }) + (e.map(([n, v]) => row(esc(n), v, { sub: 1 })).join('') || row('Tidak ada', 0, { sub: 1 })) + row('Jumlah ' + j, tot, { cls: 'gh' });
     };
+    const pem = grp('Pendapatan') + grp('Sumbangan') || row('Tidak ada pemasukan pada periode ini', undefined, { sub: 1 });
+    const kel = urut('Pengeluaran').map(([n, v]) => row(esc(n), v, { sub: 1 })).join('') || row('Tidak ada pengeluaran pada periode ini', undefined, { sub: 1 });
     return `${T}<tr><th>Uraian</th><th class="n">Jumlah</th></tr>
-      ${row('Saldo Awal', x.awal, { cls: 'tot' })}${grp('Pendapatan')}${grp('Sumbangan')}${row('Total Penerimaan', x.masuk, { cls: 'tot' })}${grp('Pengeluaran')}${row('SALDO AKHIR', x.akhir, { cls: 'tot' })}</table>`;
+      ${row('Saldo Awal', x.awal, { cls: 'tot' })}
+      ${row('I. PEMASUKAN', undefined, { cls: 'sec' })}${pem}${row('TOTAL PEMASUKAN', x.masuk, { cls: 'tot' })}
+      ${row('II. PENGELUARAN', undefined, { cls: 'sec' })}${kel}${row('TOTAL PENGELUARAN', x.keluar, { cls: 'tot' })}
+      ${row('SALDO AKHIR', x.akhir, { cls: 'tot' })}</table>`;
   };
   const rr = (lbl, x, o) => { o = o || {}; return `<tr class="${o.cls || ''}"><td class="${o.sub ? 'sub' : ''}">${lbl}</td><td class="n">${rp(x.awal)}</td><td class="n">${rp(x.masuk)}</td><td class="n">${rp(x.keluar)}</td><td class="n">${rp(x.akhir)}</td></tr>`; };
   const kh = khususList(Object.keys(c.res));
-  return `<div class="${cls}"><div class="hd"><h2>LAPORAN KEUANGAN ${esc((cf.nama_masjid || '').toUpperCase())}</h2><div>${esc([cf.alamat, cf.kota].filter(Boolean).join(', '))}</div><div><b>Periode: ${esc(r.label)}</b></div></div>
-  <div class="rh">A. Kas Umum</div>${blok(KAS_UMUM, true)}
+  const umum = only === 'umum';
+  const isi = umum ? `<div class="rh">Kas Umum</div>${blok(KAS_UMUM, true)}` : `<div class="rh">A. Kas Umum</div>${blok(KAS_UMUM, true)}
   <div class="rh">B. Kas Khusus (Insidental)</div>
   ${kh.map((d, i) => `<h4>${i + 1}. ${esc(d)}</h4>${blok(d, false)}`).join('') || '<p>Belum ada dana khusus.</p>'}
   <div class="rh">C. Rekapitulasi Seluruh Kas</div>
-  ${T}<tr><th>Kas</th><th class="n">Saldo Awal</th><th class="n">Penerimaan</th><th class="n">Pengeluaran</th><th class="n">Saldo Akhir</th></tr>
+  ${T}<tr><th>Kas</th><th class="n">Saldo Awal</th><th class="n">Pemasukan</th><th class="n">Pengeluaran</th><th class="n">Saldo Akhir</th></tr>
   ${rr('Kas Umum', c.umum)}${rr('Kas Khusus', c.khusus, { cls: 'gh' })}${kh.map(d => rr(esc(d), c.res[d], { sub: 1 })).join('')}
-  ${rr('TOTAL SELURUH KAS', c.tot, { cls: 'tot' })}</table>
+  ${rr('TOTAL SELURUH KAS', c.tot, { cls: 'tot' })}</table>`;
+  return `<div class="${cls}"><div class="hd"><h2>LAPORAN ${umum ? 'KAS UMUM' : 'KEUANGAN'} ${esc((cf.nama_masjid || '').toUpperCase())}</h2><div>${esc([cf.alamat, cf.kota].filter(Boolean).join(', '))}</div><div><b>Periode: ${esc(r.label)}</b></div></div>
+  ${isi}
   ${print ? `<div class="sig"><div>Mengetahui,<br>Ketua DKM<br><br><br><br><b><u>${esc(cf.ketua_dkm || '..............')}</u></b></div><div>${esc(cf.kota || '')}${cf.kota ? ', ' : ''}${tglID(todayISO())}<br>Bendahara<br><br><br><br><b><u>${esc(cf.bendahara || '..............')}</u></b></div></div>` : ''}</div>`;
 }
 function viewLap() {
